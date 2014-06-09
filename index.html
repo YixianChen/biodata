@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, user-scalable=yes, maximum-scale=1.0"/>
+
+<link rel="stylesheet" href="test.css" />
+
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js"></script>
+<script src="http://learningwebgl.com/lessons/lesson01/glMatrix-0.9.5.min.js"></script>
+<script src="protodb.php?_js"></script>
+<script src="data.js"></script>
+<script src="script.js"></script>
+<script src="spiralform.js"></script>
+
+<script src="jscolor/jscolor.js"></script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+  attribute vec3 aVertexPosition;
+  attribute vec3 aVertexColor;
+  attribute float aVertexOpacity;
+
+  uniform mat4 uMVMatrix;
+  uniform mat4 uPMatrix;
+  
+  varying vec3 color;
+  varying float vOpacity;
+
+  void main(void) {
+  	color = aVertexColor;
+  	vOpacity = aVertexOpacity;
+    gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+  }
+</script>
+
+<script id="shader-fs" type="x-shader/x-fragment">
+  precision mediump float;
+  
+  varying vec3 color;
+  varying float vOpacity;
+
+  void main(void) {
+    gl_FragColor = vec4(color, 1.0*vOpacity);
+  }
+</script>
+
+<script id="background-vs" type="x-shader/x-vertex">
+  attribute vec3 aVertexPosition;
+  attribute vec2 aVertexTextureCoord;
+
+  uniform mat4 uMVMatrix;
+  uniform mat4 uPMatrix;
+  
+  varying vec2 vTextureCoord;
+
+  void main(void) {
+  	vTextureCoord = aVertexTextureCoord;
+    gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+  }
+</script>
+
+<script id="background-fs" type="x-shader/x-fragment">
+  precision mediump float;
+
+  uniform sampler2D texSampler;
+  varying vec2 vTextureCoord;  
+
+  void main(void) {
+  	vec4 color = texture2D(texSampler, vTextureCoord);
+    gl_FragColor = color;
+  }
+</script>
+
+<script id="black-vs" type="x-shader/x-vertex">
+  attribute vec3 aVertexPosition;
+
+  void main(void) {
+    gl_Position = vec4(aVertexPosition, 1.0);
+  }
+</script>
+
+<script id="black-fs" type="x-shader/x-fragment">
+  precision mediump float;
+  
+  uniform vec3 uColor;
+
+  void main(void) {
+    gl_FragColor = vec4(uColor,1);
+  }
+</script>
+
+<style>
+#canvas {
+	float: left;
+}
+#right {
+	float: left;
+	display: block;
+	width: 360px;
+	
+}
+#time {
+	background: #acf;
+	color: #000;
+}
+
+#mappings {
+	width: 100%;
+}
+
+.gsr {
+	display: block;
+	width: 100%;
+}
+.gsrsample {
+	width: 48px;
+	height: 48px;
+	float: left;
+}
+
+.gsr input {
+	width: 55px;
+}
+</style>
+
+</head>
+<body>
+
+<div id="fps"></div>
+<br />
+<div id="container">
+<canvas id="canvas" width="800" height="800"></canvas>
+<div id='right'>
+<div id='datasets'></div>
+<div id='time'></div>
+<div id='mappings'></div>
+</div>
+</div>
+
+</body>
+</html>

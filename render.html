@@ -1,0 +1,769 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, user-scalable=yes, maximum-scale=1.0"/>
+
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js"></script>
+<!-- script src="data.json"></script -->
+<!-- script src="data2.json"></script -->
+
+<script>
+
+var datasets = []; //{data: data, name: "first", meta: calcMeta(data)}]; //, {data: data2, name: "DTI0061_benchmark"}];
+//var activedata = 0;
+
+var rendering = {
+	start: 0,
+	end: 0,
+};
+
+var WIDTH = 800;
+var HEIGHT = 300;
+
+//var data;
+//var meta = {};
+
+function min(a,b)
+{
+	if (a===undefined) return b;
+	return a<b?a:b;
+}
+
+function max(a,b)
+{
+	if (a===undefined) return b;
+	return a>b?a:b;
+}
+
+function initMeta()
+{
+	var meta = window.meta;
+	var e = $("#meta");
+	e.empty();
+	e.append("<h2>Meta</h2>");
+	var str = "";
+	for(p in meta)
+	{
+		str += p + " ";
+		var label = $("<span>");
+		label.text(p);
+		var inp = $("<input>");
+		inp.val(meta[p]);
+		inp.prop('p',p);
+		inp.change(function() {
+			var e = $(this);
+			var p = e.prop('p');
+			meta[p] = e.val();
+			
+			update();
+		});
+		e.append(label);
+		e.append(inp);
+		e.append("<br />");
+	}
+}
+
+function genMeta()
+{
+//	var data = window.datasets[window.activedata].data;
+//	meta = calcMeta(data);
+}
+
+function calcMeta(data)
+{
+//	var data = window.datasets[window.activedata].data;
+	var meta = {};
+	var mintime,maxtime;
+	var mingsr, maxgsr;
+	var minx,maxx,miny,maxy,minz,maxz;
+	for (var i=0,ni=data.length;i<ni;i++)
+	{
+		var obj = data[i];
+		mintime = min(mintime,obj.microseconds);
+		maxtime = max(maxtime,obj.microseconds);
+		mingsr = min(mingsr, obj.gsr);
+		maxgsr = max(maxgsr, obj.gsr);
+		minx = min(minx,obj.acc[0]);
+		maxx = max(maxx,obj.acc[0]);
+		miny = min(miny,obj.acc[1]);
+		maxy = max(maxy,obj.acc[1]);
+		minz = min(minz,obj.acc[2]);
+		maxz = max(maxz,obj.acc[2]);
+	}
+	meta.maxtime = maxtime;
+	meta.mintime = mintime;
+	meta.mingsr = mingsr;
+	meta.maxgsr = maxgsr;
+	meta.minacc = [minx,miny,minz];
+	meta.maxacc = [maxx,maxy,maxz];
+	return meta;
+}
+
+function dataToXY(time,val,minval,maxval)
+{
+	var x = parseInt((time - rendering.start) * WIDTH / (rendering.end-rendering.start));
+	var y = HEIGHT-parseInt((val - minval) * HEIGHT / (maxval-minval));
+	return [x,y];
+}
+
+function renderGrid(ctx, val, min,max, offset)
+{
+	if (offset===undefined) offset = 0;
+	ctx.beginPath();
+	xy1 = dataToXY(rendering.mintime, val, min, max);
+//	xy2 = dataToXY(meta.maxtime, val, min, max);
+	ctx.moveTo(0,xy1[1]); //xy1[0],xy1[1]);
+	ctx.lineTo(WIDTH, xy1[1]); //xy2[0],xy2[1]);
+	ctx.stroke();
+//	ctx.fillText("" + val, xy1[0] + offset,xy1[1]+20, 50);
+	ctx.fillText("" + val, 0 + offset,xy1[1]+20, 50);
+}
+
+function renderF(ctx, data, f, params)	// f is function that takes an object and returns a value
+{
+//	var data = window.datasets[window.activedata].data;
+//	ctx.fillStyle = "rgb(0,0,0)";
+	
+	if (params.step === undefined)
+	{
+		params.step = calcStep(params.min,params.max);
+	}
+	var st = params.min; //meta.mingsr; st-=(st%100)
+	var en = params.max; //meta.maxgsr; en-=en%100;
+	var step = params.step; //parseInt(((en-st) / 6));
+	// step -= step%50;
+	if (step>0)
+	{
+		for (var val = st;val<en;val+=step)
+			renderGrid(ctx,val,params.min, params.max);
+	}
+
+	ctx.beginPath();
+//	var xy = dataToXY(data[0].microseconds, data[0].gsr, meta.mingsr,meta.maxgsr);
+	var xy = dataToXY(data[0].microseconds, f(data[0]), params.min,params.max);
+	var lt = data[0].microseconds;	// last time
+	ctx.moveTo(xy[0],xy[1]);
+	for (var i=1,ni=data.length;i<ni;i++)
+	{
+		var obj = data[i];
+		xy = dataToXY(obj.microseconds, f(obj), params.min,params.max);
+		if (obj.microseconds - lt < 5000)	// draw if less than five seconds
+			ctx.lineTo(xy[0],xy[1]);
+		else								// otherwise dont draw.
+			ctx.moveTo(xy[0],xy[1]);
+		lt = obj.microseconds;
+	}
+	ctx.stroke();
+}
+
+function renderGraph(ctx,graph)
+{
+	ctx.strokeStyle = graph.color;
+	ctx.fillStyle = graph.color; //colors[i%colors.length];
+	var params = {
+		min: graph.params.min instanceof Function?graph.params.min():graph.params.min,
+		max: graph.params.max instanceof Function?graph.params.max():graph.params.max,
+	};
+	if (graph.params.step!==undefined) params.step = graph.params.step;
+
+//	var data = window.datasets[graph.dataindex].data;
+//	renderF( ctx, data, graph.f, params );
+	for (var i=0,ni=datasets.length;i<ni;i++)
+	{
+		if ($("#dataset_enabled_"+i).is(':checked'))
+		{
+			renderF(ctx,datasets[i].data,graph.f,params);
+		}
+	}
+}
+
+function calcStep(min,max)
+{
+	return parseInt( (max-min) / 6);
+}
+
+var ctx, ctx2;
+function initCanvas()
+{
+	var canvas = document.getElementById("renderarea");
+	ctx = canvas.getContext("2d");
+	clearCanvas();
+}
+
+function clearCanvas()
+{
+	ctx.fillStyle = "rgb(255,255,255)";
+	ctx.fillRect(0,0,1000,600);	
+}
+
+var graphs = [
+{
+	name: "gsr",
+//	dataindex: activedata,
+	f: function(obj) { return obj.gsr; },
+	params: {
+		min: 0, //function() { return meta.mingsr; },
+		max: 3000, //function() { return meta.maxgsr; },
+	},
+	enabled: true,
+},
+{
+	name: "acc",
+//	dataindex: activedata,
+	f: function(obj) {
+		var acc = Math.sqrt(obj.acc[0]*obj.acc[0]+obj.acc[1]*obj.acc[1]+obj.acc[2]*obj.acc[2]);
+		return Math.log(acc);
+	},
+	params: {
+		min: 0,
+		max: Math.log(40000)
+	},
+	enabled: true,
+},
+];
+
+function tToS(t)
+{
+	var p = function(i)
+	{
+		return i<10?"0"+i:i;
+	}
+	var date = new Date();
+	date.setTime(t);
+	return date.getFullYear() + "-" + p(date.getMonth()) + "-" + p(date.getDate()) + " " + p(date.getHours()) + ":" + p(date.getMinutes()) + "." + p(date.getSeconds());
+}
+
+function timeToX(time)
+{
+	return parseInt((time - rendering.start) * WIDTH / (rendering.end-rendering.start));
+}
+
+function xToTime(x)
+{
+	return parseInt(rendering.start + x*(rendering.end-rendering.start) / WIDTH);
+}
+
+function drawHighlight()
+{
+	if (!marking) return;
+	var x1 = timeToX(highlight.start);
+	var x2 = timeToX(highlight.end);
+	if (x1>x2)
+	{
+		var t = x1; x1 = x2; x2 = t;
+	}
+	ctx.fillStyle = "rgb(255,200,200)";
+	ctx.fillRect(x1,0,x2-x1,HEIGHT);
+}
+function renderDataHighlight(ctx)
+{
+	if (highlight_range === undefined) return;
+
+	var x1 = timeToX(highlight_range.start);
+	var x2 = timeToX(highlight_range.end);
+	if (x1>x2)
+	{
+		var t = x1; x1 = x2; x2 = t;
+	}
+	ctx.fillStyle = "rgba(200,200,255,0.5)";
+	ctx.fillRect(x1,0,x2-x1,HEIGHT);
+}
+
+function update()
+{
+	clearCanvas();
+	if (marking)
+		drawHighlight();
+	var colors = ["rgb(0,0,0)", "rgb(255,0,0)", "rgb(0,255,0)", "rgb(0,0,255)"];
+	for(var i=0,ni=graphs.length;i<ni;i++)
+	{
+		var graph = graphs[i];
+		if (!graph.enabled) continue;
+		if (graph.color===undefined) graph.color = colors[i%colors.length];
+		renderGraph(ctx,graph);
+	}
+	renderHighlights(ctx);
+	renderDataHighlight(ctx);
+}
+
+function initGraphEditor()
+{
+	var updateGraphEditor = function()
+	{
+		function savegraph() {
+			var index = $("#graphid").val();
+			var name = $("#graphname").val();
+			var minval = $("#graphmin").val();
+			var maxval = $("#graphmax").val();
+			var func = $("#graphfunction").val();
+			var enabled = $("#graphenabled").is(":checked");
+			var graph;
+			if (index>=0)
+				graph = graphs[index];
+			else
+				graph = {params: {}};
+			graph.name = name;
+			graph.params.min = parseFloat(minval);
+			graph.params.max = parseFloat(maxval);
+			var f = eval("var a = " + func + "; a");
+			graph.f = f;
+			graph.enabled = enabled;
+			if (index==-1)
+			{
+				graphs.push(graph);
+//				initGraphEditor();
+				$("#graphid").append("<option value='"+(graphs.length-1)+"'>" + graph.name + "</option>");
+				$("#graphid").val(graphs.length-1);
+			}
+			update();
+		}
+
+		var graphindex = $("#graphid").val();
+
+		var graph;
+		if (graphindex==-1) {
+			graph = {name: "unnamed", f: function(obj) { return 0; }, params: {min: 0, max: 1000}};
+		} else {
+			graph = graphs[graphindex];
+		}
+		var e = $("#grapheditparams");
+		
+		e.empty();
+
+		e.append("Name:");
+		var name = $("<input />");
+		name.attr('id','graphname');
+		name.attr('value',graph.name);
+		e.append(name).append("<br />");
+		name.change(savegraph);
+
+		e.append("Function:");
+		var func = $("<textarea></textarea>");
+		func.attr('id','graphfunction');
+		func.val("" + graph.f);
+		e.append(func).append("<br />");
+		func.change(savegraph);
+
+		e.append("Min:");
+		var minval = $("<input />");
+		minval.attr('id','graphmin');
+		minval.attr('value',graph.params.min);
+		e.append(minval).append("<br />");
+		minval.change(savegraph);
+
+		e.append("Max:");
+		var maxval = $("<input />");
+		maxval.attr('id','graphmax');
+		maxval.attr('value',graph.params.max);
+		e.append(maxval).append("<br />");
+		maxval.change(savegraph);
+
+		e.append("Enabled:");
+		var enabled = $("<input type='checkbox' />");
+		enabled.attr('id','graphenabled');
+		enabled.attr('checked',graph.enabled);
+		e.append(enabled).append("<br />");
+		enabled.change(savegraph);
+
+		var save = $("<button>save</button>");
+		save.click(savegraph);
+		e.append(save);
+	};
+	var e = $("#grapheditor");
+	e.empty();
+	e.append("<h2>Graphs</h2>");
+	var sel = $("<select>");
+	sel.attr('id','graphid');
+	for (var i=0;i<graphs.length;i++)
+	{
+		sel.append("<option value='"+i+"'>" + graphs[i].name + "</option>");
+	}
+	sel.append("<option value='-1'>-- NEW --</option>");
+	e.append(sel);
+	sel.change(function() {
+		updateGraphEditor();
+	});
+	e.append("<div id='grapheditparams'>")
+	updateGraphEditor();
+}
+
+var marking = false;
+var highlight = {start: 0, end: 0};
+var highlights = [];
+var highlight_highlight;
+function saveHighlight(label)
+{
+	var a = {};
+	a.start = highlight.start<highlight.end?highlight.start:highlight.end;
+	a.end = highlight.start>highlight.end?highlight.start:highlight.end;
+	a.label = label;
+	highlights.push(a);
+	console.log("Highlight saved (" + label + ")");
+
+	var li = $("<li>");
+	li.attr('mki',highlights.length-1);
+	var elem = $("<div>");
+	elem.addClass('markerlistentry');
+	elem.text(label);
+	elem.prop('index',highlights.length-1);
+	elem.hover(function() {
+		highlight_highlight = $(this).prop('index');
+		update();
+	}, function() {
+		highlight_highlight = undefined;
+		update();
+	});
+	li.append(elem);
+	var del = $("<button>delete</button>");
+	del.click((function(index) {
+		return function() {
+			delete highlights[index];
+			$("li[mki='"+index+"']").remove();
+			update();
+		};
+	})(highlights.length-1));
+	li.append(del);
+	$("#highlights").append(li);
+}
+
+function renderHighlights()
+{
+	for (var i=0,ni=highlights.length;i<ni;i++)
+	{
+		var h = highlights[i];
+		if (h===undefined) continue;
+		var x1 = timeToX(h.start), x2 = timeToX(h.end);
+		if (highlight_highlight!==i)
+			ctx.fillStyle = "rgba(200,200,255,0.5)";
+		else
+			ctx.fillStyle = "rgba(200,200,255,1.0)";
+		ctx.fillRect(x1,50,x2-x1,40);
+		ctx.fillStyle = "rgba(0,0,0,0.5)";
+		ctx.fillText(h.label, x1+2,50+12);
+	}
+}
+
+var highlight_range = undefined;
+
+function updateDatasets()
+{
+	var e = $("#datasets");
+	e.empty();
+	for (var i=0,ni=datasets.length;i<ni;i++)
+	{
+		var ds = datasets[i];
+		var div = $("<div>");
+		var checkbox = $("<input type='checkbox' />");
+		div.text(ds.name + " (" + ds.data.length + ") for " + tToS(ds.meta.mintime) + " to " + tToS(ds.meta.maxtime) );
+		div.prop('dsi', i);
+		div.prepend(checkbox);
+		checkbox.attr('id','dataset_enabled_'+i);
+		checkbox.prop('dsi',i);
+		checkbox.change(update);
+		checkbox.attr('checked',ds.enabled);
+		checkbox.change((function(index) { return function() { datasets[index].enabled=!datasets[index].enabled; update(); }})(i));
+		e.append(div);
+		div.hover(function() {
+			var meta = datasets[$(this).prop('dsi')].meta;
+			highlight_range = {start: meta.mintime, end: meta.maxtime};
+			update();
+		}, function() {
+			highlight_range = undefined;
+			update();
+		});
+		div.click((function(i) {
+			return function() {
+				var e = $("#dataset_enabled_"+i);
+				e.attr('checked',!e.is(':checked'));
+				update();
+			}
+		})(i));
+	}
+	update();
+}
+
+function startLoadingFiles(files)
+{
+	var loadFile = function(file, oncomplete)
+	{
+			var reader = new FileReader();
+			reader.onload = function(e) {
+				var pn = function(s)
+				{
+					while(s.length>1 && s.charAt(0)=='0') s = s.substr(1);
+					return parseInt(s);
+				}
+				var txt = e.target.result;
+				var data = [];
+				var lines = txt.split("\n");
+				for (var i=0,ni=lines.length;i<ni;i++)
+				{
+					var parts = lines[i].split('|');
+					if (parts.length<8) break;
+					// parts[0] : YYYYMMDDHHiissttt
+					var tY = pn(parts[0].substr(0,4));
+					var tM = pn(parts[0].substr(4,2));
+					var tD = pn(parts[0].substr(6,2));
+					var tH = pn(parts[0].substr(8,2));
+					var ti = pn(parts[0].substr(10,2));
+					var ts = pn(parts[0].substr(12,2));
+					var tt = pn(parts[0].substr(14));
+					if (tt>1000) { tt=0; ts++; }
+					var date = new Date(tY, tM, tD, tH, ti, ts, tt);
+	//				console.log("Time: " + date.getTime());
+
+					// do this with substr and parseInt...
+					// parts[1] : braceletid
+					// parts[4] : gsr
+					// parts[5,6,7] : acc (x,y,z)
+					// parts[8] : battery
+					data.push({
+						microseconds : date.getTime(),
+						braceletid : pn(parts[1]),
+						gsr : pn(parts[4]),
+						acc : [pn(parts[5]), pn(parts[6]), pn(parts[7])],
+						battery : pn(parts[8])
+					});
+				}
+				var label = prompt("Name of datafile", file.name);
+				var dataset = { data: data, name: label, meta: calcMeta(data), enabled: true };
+				datasets.push(dataset);
+				if (rendering.start>dataset.meta.mintime || rendering.start==0) rendering.start = dataset.meta.mintime;
+				if (rendering.end<dataset.meta.maxtime) rendering.end = dataset.meta.maxtime;
+				updateDatasets();
+				oncomplete();
+			};
+			reader.onerror = function(e)
+			{
+				var s = "";
+				for(p in evt.target.error)
+				{
+					s += p + ": " + evt.target.error[p] + "\n";
+				}
+				alert(s);
+			};
+			reader.readAsText(file);
+	}
+	var i=0;
+	var loadNext = function()
+	{
+		if (i<files.length)
+		{
+			loadFile(files[i], loadNext);
+			i++;
+		}
+		else
+		{
+			$("#fileinput").val("");
+		}
+	}
+	loadNext();
+}
+
+function graphValue(graph,time)
+{
+	for (var i=0,ni=datasets.length;i<ni;i++)
+	{
+		var ds = datasets[i];
+		if (ds.meta.mintime>time || ds.meta.maxtime<time) continue;
+
+		var a = 0, b = ds.data.length-1, m;
+		while(b-a>1)
+		{
+			m = parseInt((a+b)/2);
+			if (time>ds.data[m].microseconds) a = m;
+			else b = m;
+		}
+		if (Math.abs(time-ds.data[a].microseconds)<(rendering.end-rendering.start)/(WIDTH/10))
+			return graph.f(ds.data[a]);
+	}
+	first = false;
+	return undefined;
+}
+
+$(function() {
+	initCanvas();
+
+//	genMeta();
+//	initMeta();
+
+	// init rendering
+	rendering.start = 0; //meta.mintime;
+	rendering.end = 1; //meta.maxtime;
+
+	update();
+
+	var scrolling = false;
+	var mousedown = false;
+	var mousedownpoint;
+	var zoomstack = [];
+
+	$("#renderarea").mousemove(function(e) {
+		var x = e.offsetX;
+		var y = e.offsetY;
+		var time = parseInt(rendering.start + x*(rendering.end-rendering.start) / WIDTH);
+		$("#cursorinfo").text(""+tToS(time));
+		for(var i=0,ni=graphs.length;i<ni;i++)
+		{
+			var graph = graphs[i];
+			if (!graph.enabled) continue;
+			$("#cursorinfo").append("<br />" + graph.name + ": " + graphValue(graph,time));
+		}
+
+		if (marking)
+		{
+			highlight.end = xToTime(event.offsetX);
+			update();
+		}
+		else if (mousedown)
+		{
+			scrolling = true;
+		
+			var scroll = x-mousedownpoint.x;
+			var scrolltime = parseInt(scroll*(rendering.end-rendering.start) / WIDTH);
+			rendering.start -= scrolltime;
+			rendering.end -= scrolltime;
+			mousedownpoint = {x: event.offsetX, y: event.offsetY};
+			update();
+		}
+	});
+	
+	function zoomOut(time)
+	{
+/*		if (zoomstack.length>0)
+		{
+			var z = zoomstack.pop();
+			rendering.start = z.start;
+			rendering.end = z.end;
+		}
+		else*/
+		{
+/*			var tw = (rendering.end-rendering.start)/2;	// time width
+			rendering.start = parseInt(rendering.start-tw);
+			rendering.end = parseInt(rendering.end+tw);*/
+			rendering.start = rendering.start - (time-rendering.start);
+			rendering.end = rendering.end + (rendering.end-time);
+		}
+	}
+
+	$("#renderarea").mousedown(function(e) {
+		if (e.which==1)
+		{
+			if (event.altKey)
+			{
+				zoomOut(xToTime(event.offsetX));
+				update();
+				return false;
+			}
+			mousedown = true;
+			mousedownpoint = {x: event.offsetX, y: event.offsetY};
+			if (event.shiftKey)
+			{
+				marking = true;
+				highlight.start = highlight.end = xToTime(event.offsetX);
+				console.log("Highlight marking start " + highlight.start);
+			}
+		}
+		else if (e.which==3)	// right
+		{
+			// zoom out
+			zoomOut(xToTime(event.offsetX));
+			return false;
+		}
+	});
+	
+	$("#renderarea").mouseup(function(e) {
+		mousedown = false;
+		if (marking)
+		{
+			marking = false;
+			var note = prompt("Label");
+			if (note!=null) saveHighlight(note);
+			update();
+			return false;
+		}
+		if (scrolling)
+		{
+			scrolling = false;
+			return false;
+		}
+		var x = e.offsetX;
+		var y = e.offsetY;
+		var time = xToTime(x);
+		if (e.which==1)			// left
+		{
+			// zoom in
+			if (!event.altKey)
+			{
+				zoomstack.push({start: rendering.start, end: rendering.end});
+				rendering.start = parseInt((rendering.start+time) / 2);
+				rendering.end = parseInt((rendering.end+time) / 2);
+			}
+		}
+		update();
+		e.preventDefault();
+		return false;
+	});
+
+	initGraphEditor();
+
+	$("#fileinput").change(function() {
+		var files = this.files;	// the files
+		startLoadingFiles(files);
+	});
+});
+</script>
+<style>
+#topleft, #topright {
+	float: left;
+	width: 50%;
+	height: 300px;
+	overflow: auto;
+}
+#sidestuff {
+	float: right;
+	background: rgb(255,200,200);
+	width: 350px;
+}
+#markers {
+	float: left;
+	width: 200px;
+	display: inline;
+	/*background: #e8e8e8;*/
+	height: 200px;
+	overflow: auto;
+}
+
+canvas {
+	display: inline;
+	float: left;
+}
+
+#datasets > div > input {
+	margin: 10px;
+}
+</style>
+</head>
+<body>
+	<div id="topleft">
+		<h2>Data</h2>
+		<div id="datasets"></div>
+		<input type="file" id="fileinput" multiple value="Select data file" />
+	</div>
+	<div id="topright">
+		<div id="grapheditor"></div>
+	</div>
+	<div>
+		<div id="sidestuff">
+			<div id="cursorinfo"></div>
+			<div id="meta"></div>
+		</div>
+		<div id="markers">
+			<h2>Highlights</h2>
+			<ul id="highlights"></ul>
+		</div>
+		<canvas width="800" height="300" id="renderarea"></canvas>
+	</div>
+</body>
+</html>
